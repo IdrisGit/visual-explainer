@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
@@ -185,6 +185,12 @@ function assertResolvesToItself(path: string) {
   if (resolved !== path) throw new Error(`${path} must not contain symlinks and must resolve to itself (it resolves to ${resolved})`);
 }
 
+// Validate without creating anything, before prepare directs the agent to write a source.
+function assertOutputDirectory({ path, configured }: OutputDirectory) {
+  if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${path} must not be a symlink`);
+  if (configured) assertResolvesToItself(path);
+}
+
 function outputFilename(input: string) {
   const raw = input.trim().replace(/^@/, "");
 
@@ -301,6 +307,7 @@ function prepareVisualExplanation(pi: ExtensionAPI, params: VisualExplainerParam
 
   const topic = params.topic.trim();
   if (!topic) throw new Error("topic is required");
+  assertOutputDirectory(output);
 
   const goal = params.goal?.trim();
   const audience = params.audience?.trim();
@@ -371,8 +378,7 @@ async function writeRenderedHtml(
   const html = prepareRenderedHtml(page ? page.html : htmlInput);
   const { path: outputDir, configured } = output;
   const outputPath = join(outputDir, filename);
-  if (existsSync(outputDir) && lstatSync(outputDir).isSymbolicLink()) throw new Error(`${outputDir} must not be a symlink`);
-  if (configured) assertResolvesToItself(outputDir);
+  assertOutputDirectory(output);
   mkdirSync(outputDir, { recursive: true });
   if (configured) assertResolvesToItself(outputDir);
   const writeAtomically = (path: string, content: string) => {
